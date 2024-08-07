@@ -206,6 +206,7 @@ class Game:
         self.user_profiles = self.load_profiles()
         self.current_profile = None
         self.stats = {"white_wins": 0, "black_wins": 0, "draws": 0}
+        self.multiplayer_stats = {"white": {}, "black": {}}
 
     def load_profiles(self):
         try:
@@ -305,6 +306,7 @@ class Game:
             if winner:
                 print(f"{winner.capitalize()} wins!")
                 self.update_stats(winner)
+                self.update_multiplayer_stats(winner)
                 break
 
             print(f"{self.current_turn}'s turn")
@@ -341,90 +343,49 @@ class Game:
             else:
                 print("Invalid move, try again")
 
-    def update_profile(self, winner):
-        if winner == self.current_profile:
-            self.user_profiles[self.current_profile]["wins"] += 1
-        else:
-            self.user_profiles[self.current_profile]["losses"] += 1
-        self.save_profiles()
-
-    def update_stats(self, winner):
-        if winner == "white":
-            self.stats["white_wins"] += 1
-        elif winner == "black":
-            self.stats["black_wins"] += 1
-        else:
-            self.stats["draws"] += 1
+    def get_ai_move(self):
+        best_move = self.board.get_best_move(self.current_turn, self.difficulty)
+        return best_move if best_move else (0, 0, 0, 0)
 
     def save_state(self, start_row, start_col, end_row, end_col):
-        self.history.append(copy.deepcopy(self.board))
-        self.move_history.append((start_row, start_col, end_row, end_col))
+        self.move_history.append((start_row, start_col, end_row, end_col, self.board.board))
+        with open("game_state.pkl", "wb") as f:
+            pickle.dump((self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty), f)
 
     def undo_move(self):
-        if self.history:
-            self.board = self.history.pop()
-            self.move_history.pop()
-            self.current_turn = "black" if self.current_turn == "white" else "white"
-            self.move_count -= 1
-        else:
+        if not self.move_history:
             print("No moves to undo")
+            return
+        self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty = self.move_history.pop()
+        print("Move undone")
 
     def view_history(self):
-        if not self.move_history:
-            print("No moves have been made yet.")
-        else:
-            print("Move history:")
-            for i, move in enumerate(self.move_history):
-                print(f"Move {i + 1}: {move[0]} {move[1]} -> {move[2]} {move[3]}")
+        for i, move in enumerate(self.move_history):
+            print(f"Move {i+1}: {move}")
 
     def replay_game(self):
-        if not self.move_history:
-            print("No moves to replay.")
-            return
-
-        print("Replaying game...")
-        self.board = Board()
-        self.current_turn = "white"
-        self.move_count = 0
-        for move in self.move_history:
-            self.board.perform_move(*move)
+        for board_state in self.move_history:
+            self.board.board = board_state[4]
             self.board.print_board()
-            winner = self.board.get_winner()
-            if winner:
-                print(f"{winner.capitalize()} wins!")
-                return
-            self.current_turn = "black" if self.current_turn == "white" else "white"
-            self.move_count += 1
-
-    def view_stats(self):
-        profile = self.user_profiles.get(self.current_profile, {})
-        wins = profile.get("wins", 0)
-        losses = profile.get("losses", 0)
-        print(f"Profile: {self.current_profile}")
-        print(f"Wins: {wins}, Losses: {losses}")
-        print(f"Total moves made: {self.move_count}")
-        print(f"Game Statistics: White Wins: {self.stats['white_wins']}, Black Wins: {self.stats['black_wins']}, Draws: {self.stats['draws']}")
+            input("Press Enter to continue...")
 
     def show_hint(self):
-        if self.current_turn == "black":
-            move = self.get_ai_move()
-            if move:
-                print(f"Hint: Move from ({move[0]}, {move[1]}) to ({move[2]}, {move[3]})")
-            else:
-                print("No available moves for AI.")
+        best_move = self.board.get_best_move(self.current_turn, self.difficulty)
+        if best_move:
+            print(f"Hint: Move from {best_move[0]}, {best_move[1]} to {best_move[2]}, {best_move[3]}")
         else:
-            print("Hint feature is only available for AI.")
+            print("No hint available")
 
     def save_game(self):
-        with open("checkers_save.pkl", "wb") as f:
-            pickle.dump((self.board, self.current_turn, self.history, self.move_history, self.move_count, self.difficulty, self.stats), f)
-        print("Game saved.")
+        with open("game_save.pkl", "wb") as f:
+            pickle.dump((self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty), f)
+        print("Game saved")
 
     def load_game(self):
         try:
-            with open("checkers_save.pkl", "rb") as f:
-                self.board, self.current_turn, self.history, self.move_history, self.move_count, self.difficulty, self.stats = pickle.load(f)
-            print("Game loaded.")
+            with open("game_save.pkl", "rb") as f:
+                self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty = pickle.load(f)
+            print("Game loaded")
         except FileNotFoundError:
             print("No saved game found.")
 
@@ -443,6 +404,40 @@ class Game:
             print(f"Board size set to {new_size}.")
         else:
             print("Invalid board size. Please enter an even number between 6 and 12.")
+
+    def update_profile(self, winner):
+        if self.current_profile:
+            if winner == "white":
+                self.user_profiles[self.current_profile]["wins"] += 1
+            else:
+                self.user_profiles[self.current_profile]["losses"] += 1
+            self.save_profiles()
+
+    def update_stats(self, winner):
+        if winner == "white":
+            self.stats["white_wins"] += 1
+        else:
+            self.stats["black_wins"] += 1
+
+    def update_multiplayer_stats(self, winner):
+        if winner not in self.multiplayer_stats["white"]:
+            self.multiplayer_stats["white"][winner] = 0
+        if winner not in self.multiplayer_stats["black"]:
+            self.multiplayer_stats["black"][winner] = 0
+        if winner == "white":
+            self.multiplayer_stats["white"][winner] += 1
+        else:
+            self.multiplayer_stats["black"][winner] += 1
+
+    def view_stats(self):
+        print(f"White Wins: {self.stats['white_wins']}")
+        print(f"Black Wins: {self.stats['black_wins']}")
+        print(f"Draws: {self.stats['draws']}")
+        print("Multiplayer Stats:")
+        for color, stats in self.multiplayer_stats.items():
+            print(f"{color.capitalize()}:")
+            for opponent, wins in stats.items():
+                print(f"  {opponent}: {wins} wins")
 
 if __name__ == "__main__":
     game = Game()
