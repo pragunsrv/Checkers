@@ -205,6 +205,7 @@ class Game:
         self.difficulty = 2
         self.user_profiles = self.load_profiles()
         self.current_profile = None
+        self.stats = {"white_wins": 0, "black_wins": 0, "draws": 0}
 
     def load_profiles(self):
         try:
@@ -218,17 +219,31 @@ class Game:
             json.dump(self.user_profiles, f)
 
     def start(self):
-        self.current_profile = input("Enter your profile name: ").strip()
-        if self.current_profile not in self.user_profiles:
-            self.user_profiles[self.current_profile] = {"wins": 0, "losses": 0}
-            self.save_profiles()
+        print("Welcome to Checkers!")
+        while True:
+            mode = input("Select mode: 1 for Single Player, 2 for Multiplayer, or 0 to Quit: ").strip()
+            if mode == '0':
+                print("Exiting game.")
+                break
+            elif mode == '1':
+                self.current_profile = input("Enter your profile name: ").strip()
+                if self.current_profile not in self.user_profiles:
+                    self.user_profiles[self.current_profile] = {"wins": 0, "losses": 0}
+                    self.save_profiles()
+                self.play_single_player()
+            elif mode == '2':
+                self.play_multiplayer()
+            else:
+                print("Invalid mode. Please choose 1, 2, or 0.")
 
+    def play_single_player(self):
         while True:
             self.board.print_board()
             winner = self.board.get_winner()
             if winner:
                 print(f"{winner.capitalize()} wins!")
                 self.update_profile(winner)
+                self.update_stats(winner)
                 break
 
             if self.current_turn == "white":
@@ -282,12 +297,64 @@ class Game:
             else:
                 print("Invalid move, try again")
 
+    def play_multiplayer(self):
+        self.current_turn = "white"
+        while True:
+            self.board.print_board()
+            winner = self.board.get_winner()
+            if winner:
+                print(f"{winner.capitalize()} wins!")
+                self.update_stats(winner)
+                break
+
+            print(f"{self.current_turn}'s turn")
+            user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, or 'customize' to customize board: ").strip()
+            if user_input.lower() == 'undo':
+                self.undo_move()
+                continue
+            if user_input.lower() == 'history':
+                self.view_history()
+                continue
+            if user_input.lower() == 'replay':
+                self.replay_game()
+                continue
+            if user_input.lower() == 'stats':
+                self.view_stats()
+                continue
+            if user_input.lower() == 'customize':
+                self.customize_board()
+                continue
+            try:
+                start_row, start_col, end_row, end_col = map(int, user_input.split())
+            except ValueError:
+                print("Invalid input format. Please enter four integers separated by spaces.")
+                continue
+
+            if self.board.valid_move(start_row, start_col, end_row, end_col):
+                self.save_state(start_row, start_col, end_row, end_col)
+                self.board.perform_move(start_row, start_col, end_row, end_col)
+                if self.board.get_possible_captures(end_row, end_col):
+                    print(f"{self.current_turn} must continue capturing")
+                else:
+                    self.current_turn = "black" if self.current_turn == "white" else "white"
+                self.move_count += 1
+            else:
+                print("Invalid move, try again")
+
     def update_profile(self, winner):
         if winner == self.current_profile:
             self.user_profiles[self.current_profile]["wins"] += 1
         else:
             self.user_profiles[self.current_profile]["losses"] += 1
         self.save_profiles()
+
+    def update_stats(self, winner):
+        if winner == "white":
+            self.stats["white_wins"] += 1
+        elif winner == "black":
+            self.stats["black_wins"] += 1
+        else:
+            self.stats["draws"] += 1
 
     def save_state(self, start_row, start_col, end_row, end_col):
         self.history.append(copy.deepcopy(self.board))
@@ -336,6 +403,7 @@ class Game:
         print(f"Profile: {self.current_profile}")
         print(f"Wins: {wins}, Losses: {losses}")
         print(f"Total moves made: {self.move_count}")
+        print(f"Game Statistics: White Wins: {self.stats['white_wins']}, Black Wins: {self.stats['black_wins']}, Draws: {self.stats['draws']}")
 
     def show_hint(self):
         if self.current_turn == "black":
@@ -349,50 +417,32 @@ class Game:
 
     def save_game(self):
         with open("checkers_save.pkl", "wb") as f:
-            pickle.dump((self.board, self.current_turn, self.history, self.move_history, self.move_count, self.difficulty), f)
+            pickle.dump((self.board, self.current_turn, self.history, self.move_history, self.move_count, self.difficulty, self.stats), f)
         print("Game saved.")
 
     def load_game(self):
         try:
             with open("checkers_save.pkl", "rb") as f:
-                self.board, self.current_turn, self.history, self.move_history, self.move_count, self.difficulty = pickle.load(f)
+                self.board, self.current_turn, self.history, self.move_history, self.move_count, self.difficulty, self.stats = pickle.load(f)
             print("Game loaded.")
         except FileNotFoundError:
             print("No saved game found.")
 
     def change_difficulty(self):
-        difficulty = input("Enter AI difficulty level (1-3): ").strip()
-        try:
-            difficulty = int(difficulty)
-            if 1 <= difficulty <= 3:
-                self.difficulty = difficulty
-                print(f"AI difficulty set to {difficulty}.")
-            else:
-                print("Invalid difficulty level. Please enter a number between 1 and 3.")
-        except ValueError:
-            print("Invalid input. Please enter a number between 1 and 3.")
+        new_difficulty = input("Enter new difficulty level (1-5): ").strip()
+        if new_difficulty.isdigit() and 1 <= int(new_difficulty) <= 5:
+            self.difficulty = int(new_difficulty)
+            print(f"AI difficulty set to {self.difficulty}.")
+        else:
+            print("Invalid difficulty level. Please enter a number between 1 and 5.")
 
     def customize_board(self):
-        size = input("Enter board size (e.g., 8 for 8x8): ").strip()
-        try:
-            size = int(size)
-            if size < 4:
-                print("Board size must be at least 4.")
-                return
-        except ValueError:
-            print("Invalid input. Please enter a number.")
-            return
-        
-        color1 = input("Enter color for white pieces: ").strip()
-        color2 = input("Enter color for black pieces: ").strip()
-        self.board = Board(size=size, colors=(color1, color2))
-
-    def get_ai_move(self):
-        best_move = self.board.get_best_move("black", self.difficulty)
-        if best_move is None:
-            raise ValueError("No possible moves for AI")
-        
-        return best_move
+        new_size = input("Enter new board size (even number between 6 and 12): ").strip()
+        if new_size.isdigit() and 6 <= int(new_size) <= 12 and int(new_size) % 2 == 0:
+            self.board = Board(size=int(new_size))
+            print(f"Board size set to {new_size}.")
+        else:
+            print("Invalid board size. Please enter an even number between 6 and 12.")
 
 if __name__ == "__main__":
     game = Game()
