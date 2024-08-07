@@ -34,8 +34,9 @@ class Board:
         return board
 
     def print_board(self):
-        for row in self.board:
-            print(' '.join([str(piece) if piece else '.' for piece in row]))
+        print("  " + " ".join(str(i) for i in range(8)))
+        for i, row in enumerate(self.board):
+            print(i, " ".join([str(piece) if piece else '.' for piece in row]))
         print()
 
     def move_piece(self, start_row, start_col, end_row, end_col):
@@ -177,11 +178,27 @@ class Board:
                     break
             return min_eval
 
+    def get_best_move(self, color):
+        best_move = None
+        best_value = float('-inf') if color == "black" else float('inf')
+        depth = 4 if color == "black" else 3  # Adjust depth based on player
+
+        for move in self.get_all_moves(color):
+            new_board = copy.deepcopy(self)
+            new_board.perform_move(*move)
+            board_value = new_board.minimax(depth, color == "black", float('-inf'), float('inf'))
+            if (color == "black" and board_value > best_value) or (color == "white" and board_value < best_value):
+                best_value = board_value
+                best_move = move
+
+        return best_move
+
 class Game:
     def __init__(self):
         self.board = Board()
         self.current_turn = "white"
         self.history = []
+        self.move_history = []
 
     def start(self):
         while True:
@@ -193,9 +210,12 @@ class Game:
 
             if self.current_turn == "white":
                 print(f"{self.current_turn}'s turn")
-                user_input = input("Enter start and end position (row col row col) or 'undo' to undo last move: ").strip()
+                user_input = input("Enter start and end position (row col row col) or 'undo' to undo last move, 'history' to view move history: ").strip()
                 if user_input.lower() == 'undo':
                     self.undo_move()
+                    continue
+                if user_input.lower() == 'history':
+                    self.view_history()
                     continue
                 try:
                     start_row, start_col, end_row, end_col = map(int, user_input.split())
@@ -205,9 +225,10 @@ class Game:
             else:
                 print(f"{self.current_turn}'s turn (AI)")
                 start_row, start_col, end_row, end_col = self.get_ai_move()
+                print(f"AI moves: {start_row} {start_col} -> {end_row} {end_col}")
 
             if self.board.valid_move(start_row, start_col, end_row, end_col):
-                self.save_state()
+                self.save_state(start_row, start_col, end_row, end_col)
                 self.board.perform_move(start_row, start_col, end_row, end_col)
                 if self.board.get_possible_captures(end_row, end_col):
                     print(f"{self.current_turn} must continue capturing")
@@ -216,28 +237,28 @@ class Game:
             else:
                 print("Invalid move, try again")
 
-    def save_state(self):
+    def save_state(self, start_row, start_col, end_row, end_col):
         self.history.append(copy.deepcopy(self.board))
+        self.move_history.append((start_row, start_col, end_row, end_col))
 
     def undo_move(self):
         if self.history:
             self.board = self.history.pop()
+            self.move_history.pop()
             self.current_turn = "black" if self.current_turn == "white" else "white"
         else:
             print("No moves to undo")
 
+    def view_history(self):
+        if not self.move_history:
+            print("No moves have been made yet.")
+        else:
+            print("Move history:")
+            for i, move in enumerate(self.move_history):
+                print(f"Move {i + 1}: {move[0]} {move[1]} -> {move[2]} {move[3]}")
+
     def get_ai_move(self):
-        best_move = None
-        best_value = float('-inf')
-
-        for move in self.board.get_all_moves("black"):
-            new_board = copy.deepcopy(self.board)
-            new_board.perform_move(*move)
-            board_value = new_board.minimax(3, False, float('-inf'), float('inf'))
-            if board_value > best_value:
-                best_value = board_value
-                best_move = move
-
+        best_move = self.board.get_best_move("black")
         if best_move is None:
             raise ValueError("No possible moves for AI")
         
