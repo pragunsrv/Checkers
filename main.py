@@ -1,13 +1,11 @@
 import random
 import copy
-import pickle
 import json
 import socket
 import threading
 import tkinter as tk
 from tkinter import messagebox, simpledialog, filedialog
-import requests
-import cloudpickle
+from PIL import Image, ImageTk
 
 class Piece:
     def __init__(self, color):
@@ -236,6 +234,15 @@ class Game:
         self.quit_button = tk.Button(self.info_frame, text="Quit", command=self.window.quit)
         self.quit_button.pack()
 
+        self.tournament_button = tk.Button(self.info_frame, text="Tournament Mode", command=self.start_tournament)
+        self.tournament_button.pack()
+
+        self.save_button = tk.Button(self.info_frame, text="Save Game", command=self.save_game)
+        self.save_button.pack()
+
+        self.load_button = tk.Button(self.info_frame, text="Load Game", command=self.load_game)
+        self.load_button.pack()
+
         self.board_buttons = [[None for _ in range(self.board.size)] for _ in range(self.board.size)]
         for r in range(self.board.size):
             for c in range(self.board.size):
@@ -447,14 +454,12 @@ class Game:
                 except ValueError:
                     messagebox.showerror("Invalid Input", "Invalid input format. Please enter four integers separated by spaces.")
                     continue
-                if self.networked_mode:
-                    self.send_message(f"{start_row} {start_col} {end_row} {end_col}")
+                self.send_message(f"{start_row} {start_col} {end_row} {end_col}")
             else:
                 message = self.receive_message()
                 if message:
                     start_row, start_col, end_row, end_col = map(int, message.split())
-                else:
-                    continue
+                    self.handle_remote_move(start_row, start_col, end_row, end_col)
 
             if self.board.valid_move(start_row, start_col, end_row, end_col):
                 self.save_state(start_row, start_col, end_row, end_col)
@@ -467,74 +472,31 @@ class Game:
             else:
                 messagebox.showerror("Invalid Move", "Invalid move, try again")
 
-    def get_ai_move(self):
-        return self.board.get_best_move(self.current_turn, self.difficulty)
+    def receive_message(self):
+        if self.networked_mode and self.client_socket:
+            try:
+                message = self.client_socket.recv(1024).decode()
+                return message
+            except Exception as e:
+                print(f"Failed to receive message: {e}")
+                return None
+        return None
 
-    def save_state(self, start_row, start_col, end_row, end_col):
-        self.move_history.append((start_row, start_col, end_row, end_col))
-        with open("game_state.pkl", "wb") as f:
-            cloudpickle.dump((self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty), f)
-
-    def undo_move(self):
-        if self.move_history:
-            last_move = self.move_history.pop()
-            start_row, start_col, end_row, end_col = last_move
-            self.board.move_piece(end_row, end_col, start_row, start_col)
-            self.current_turn = "black" if self.current_turn == "white" else "white"
-            self.move_count -= 1
-            self.update_gui()
-        else:
-            messagebox.showinfo("Undo", "No moves to undo.")
-
-    def view_history(self):
-        history_str = "\n".join([f"Move from {start_row},{start_col} to {end_row},{end_col}" for start_row, start_col, end_row, end_col in self.move_history])
-        messagebox.showinfo("Move History", history_str or "No moves made yet.")
-
-    def replay_game(self):
-        self.restart_game()
-        for move in self.move_history:
-            start_row, start_col, end_row, end_col = move
-            self.board.perform_move(start_row, start_col, end_row, end_col)
-            self.update_gui()
-            self.window.after(1000)  # Pause for 1 second
-
-    def show_hint(self):
-        best_move = self.board.get_best_move(self.current_turn, self.difficulty)
-        if best_move:
-            messagebox.showinfo("Hint", f"Hint: Move from ({best_move[0]},{best_move[1]}) to ({best_move[2]},{best_move[3]})")
-        else:
-            messagebox.showinfo("Hint", "No available moves or captures.")
-
-    def save_game(self):
-        with open("game_save.pkl", "wb") as f:
-            cloudpickle.dump((self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty), f)
-        messagebox.showinfo("Save Game", "Game saved")
-
-    def load_game(self):
-        try:
-            with open("game_save.pkl", "rb") as f:
-                self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty = cloudpickle.load(f)
-            self.update_gui()
-            messagebox.showinfo("Load Game", "Game loaded")
-        except FileNotFoundError:
-            messagebox.showerror("Load Game", "No saved game found")
-
-    def change_difficulty(self):
-        new_difficulty = simpledialog.askinteger("Change Difficulty", "Enter new difficulty level (1-5):")
-        if new_difficulty and 1 <= new_difficulty <= 5:
-            self.difficulty = new_difficulty
-            messagebox.showinfo("Difficulty Change", f"Difficulty set to {self.difficulty}")
-        else:
-            messagebox.showerror("Difficulty Change", "Invalid difficulty level. Please enter a number between 1 and 5.")
-
-    def customize_board(self):
-        new_size = simpledialog.askinteger("Customize Board", "Enter new board size (must be an even number):")
-        if new_size and new_size % 2 == 0 and new_size >= 6:
-            self.board = Board(size=new_size)
-            self.update_gui()
-            messagebox.showinfo("Customize Board", f"Board size set to {new_size}")
-        else:
-            messagebox.showerror("Customize Board", "Invalid size. Please enter an even number greater than or equal to 6.")
+    def start_tournament(self):
+        num_games = simpledialog.askinteger("Tournament Mode", "Enter number of games:")
+        if num_games and num_games > 0:
+            results = {"white_wins": 0, "black_wins": 0, "draws": 0}
+            for _ in range(num_games):
+                self.restart_game()
+                self.play_single_player()
+                winner = self.board.get_winner()
+                if winner == "white":
+                    results["white_wins"] += 1
+                elif winner == "black":
+                    results["black_wins"] += 1
+                else:
+                    results["draws"] += 1
+            messagebox.showinfo("Tournament Results", f"White Wins: {results['white_wins']}\nBlack Wins: {results['black_wins']}\nDraws: {results['draws']}")
 
     def update_profile(self, winner):
         if self.current_profile:
@@ -577,6 +539,86 @@ class Game:
         for rank, player in enumerate(leaderboard, start=1):
             leaderboard_str += f"\nRank {rank}: {player['name']} - Wins: {player['wins']}"
         messagebox.showinfo("Leaderboard", leaderboard_str)
+
+    def get_ai_move(self):
+        move = self.board.get_best_move(self.current_turn, self.difficulty)
+        if move:
+            return move
+        return random.choice(self.board.get_all_moves(self.current_turn))
+
+    def undo_move(self):
+        if self.move_history:
+            last_move = self.move_history.pop()
+            self.board = last_move["board"]
+            self.current_turn = last_move["turn"]
+            self.move_count = last_move["move_count"]
+            self.update_gui()
+        else:
+            messagebox.showwarning("Undo", "No moves to undo!")
+
+    def save_game(self):
+        file = filedialog.asksaveasfile(defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if file:
+            game_data = {
+                "board": self.board.board,
+                "current_turn": self.current_turn,
+                "move_history": self.move_history,
+                "move_count": self.move_count
+            }
+            json.dump(game_data, file)
+            file.close()
+
+    def load_game(self):
+        file = filedialog.askopenfile(defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if file:
+            game_data = json.load(file)
+            self.board.board = game_data["board"]
+            self.current_turn = game_data["current_turn"]
+            self.move_history = game_data["move_history"]
+            self.move_count = game_data["move_count"]
+            file.close()
+            self.update_gui()
+
+    def replay_game(self):
+        if self.move_history:
+            replay_board = Board()
+            for move in self.move_history:
+                replay_board.board = copy.deepcopy(move["board"])
+                self.update_gui()
+                self.window.update()
+                self.window.after(1000)  # 1-second delay between moves
+        else:
+            messagebox.showwarning("Replay", "No move history to replay!")
+
+    def show_hint(self):
+        move = self.board.get_best_move(self.current_turn, self.difficulty)
+        if move:
+            messagebox.showinfo("Hint", f"Try moving from ({move[0]}, {move[1]}) to ({move[2]}, {move[3]})")
+        else:
+            messagebox.showinfo("Hint", "No hints available.")
+
+    def change_difficulty(self):
+        difficulty = simpledialog.askinteger("Difficulty", "Enter difficulty level (1-3):", minvalue=1, maxvalue=3)
+        if difficulty:
+            self.difficulty = difficulty
+
+    def customize_board(self):
+        color1 = simpledialog.askstring("Board Customization", "Enter color for white pieces:")
+        color2 = simpledialog.askstring("Board Customization", "Enter color for black pieces:")
+        if color1 and color2:
+            self.board.colors = (color1, color2)
+            self.update_gui()
+
+    def view_history(self):
+        history_str = "\n".join(f"Move {i+1}: {move}" for i, move in enumerate(self.move_history))
+        messagebox.showinfo("Move History", history_str)
+
+    def save_state(self, start_row, start_col, end_row, end_col):
+        self.move_history.append({
+            "board": copy.deepcopy(self.board),
+            "turn": self.current_turn,
+            "move_count": self.move_count
+        })
 
 if __name__ == "__main__":
     game = Game()
