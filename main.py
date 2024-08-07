@@ -199,6 +199,7 @@ class Game:
         self.current_turn = "white"
         self.history = []
         self.move_history = []
+        self.move_count = 0
 
     def start(self):
         while True:
@@ -210,7 +211,7 @@ class Game:
 
             if self.current_turn == "white":
                 print(f"{self.current_turn}'s turn")
-                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, or 'replay' to replay game: ").strip()
+                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, or 'stats' to view game statistics: ").strip()
                 if user_input.lower() == 'undo':
                     self.undo_move()
                     continue
@@ -219,6 +220,9 @@ class Game:
                     continue
                 if user_input.lower() == 'replay':
                     self.replay_game()
+                    continue
+                if user_input.lower() == 'stats':
+                    self.view_stats()
                     continue
                 try:
                     start_row, start_col, end_row, end_col = map(int, user_input.split())
@@ -237,6 +241,7 @@ class Game:
                     print(f"{self.current_turn} must continue capturing")
                 else:
                     self.current_turn = "black" if self.current_turn == "white" else "white"
+                self.move_count += 1
             else:
                 print("Invalid move, try again")
 
@@ -249,6 +254,7 @@ class Game:
             self.board = self.history.pop()
             self.move_history.pop()
             self.current_turn = "black" if self.current_turn == "white" else "white"
+            self.move_count -= 1
         else:
             print("No moves to undo")
 
@@ -268,6 +274,7 @@ class Game:
         print("Replaying game...")
         self.board = Board()
         self.current_turn = "white"
+        self.move_count = 0
         for move in self.move_history:
             self.board.perform_move(*move)
             self.board.print_board()
@@ -276,6 +283,10 @@ class Game:
                 print(f"{winner.capitalize()} wins!")
                 return
             self.current_turn = "black" if self.current_turn == "white" else "white"
+            self.move_count += 1
+
+    def view_stats(self):
+        print(f"Total moves made: {self.move_count}")
 
     def get_ai_move(self):
         best_move = self.board.get_best_move("black")
