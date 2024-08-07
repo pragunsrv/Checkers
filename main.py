@@ -47,6 +47,13 @@ class Board:
         if (piece.color == "white" and end_row == 0) or (piece.color == "black" and end_row == 7):
             piece.make_king()
 
+    def capture_piece(self, start_row, start_col, end_row, end_col):
+        middle_row = (start_row + end_row) // 2
+        middle_col = (start_col + end_col) // 2
+        if self.board[middle_row][middle_col] is None:
+            raise ValueError("No piece to capture")
+        self.board[middle_row][middle_col] = None
+
     def valid_move(self, start_row, start_col, end_row, end_col):
         if not (0 <= start_row < 8 and 0 <= start_col < 8 and 0 <= end_row < 8 and 0 <= end_col < 8):
             return False
@@ -59,9 +66,22 @@ class Board:
             return False
         if piece.color == "black" and not piece.king and end_row <= start_row:
             return False
-        if abs(start_row - end_row) != 1 or abs(start_col - end_col) != 1:
-            return False
-        return True
+        row_diff = abs(start_row - end_row)
+        col_diff = abs(start_col - end_col)
+        if row_diff == 1 and col_diff == 1:
+            return True
+        if row_diff == 2 and col_diff == 2:
+            middle_row = (start_row + end_row) // 2
+            middle_col = (start_col + end_col) // 2
+            if self.board[middle_row][middle_col] is None or self.board[middle_row][middle_col].color == piece.color:
+                return False
+            return True
+        return False
+
+    def perform_move(self, start_row, start_col, end_row, end_col):
+        if abs(start_row - end_row) == 2 and abs(start_col - end_col) == 2:
+            self.capture_piece(start_row, start_col, end_row, end_col)
+        self.move_piece(start_row, start_col, end_row, end_col)
 
 class Game:
     def __init__(self):
@@ -76,7 +96,7 @@ class Game:
             end_row, end_col = map(int, input("Enter end position (row col): ").split())
 
             if self.board.valid_move(start_row, start_col, end_row, end_col):
-                self.board.move_piece(start_row, start_col, end_row, end_col)
+                self.board.perform_move(start_row, start_col, end_row, end_col)
                 self.current_turn = "black" if self.current_turn == "white" else "white"
             else:
                 print("Invalid move, try again")
