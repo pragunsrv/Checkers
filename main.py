@@ -5,8 +5,9 @@ import json
 import socket
 import threading
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox, simpledialog, filedialog
 import requests
+import cloudpickle
 
 class Piece:
     def __init__(self, color):
@@ -215,6 +216,48 @@ class Game:
         self.client_socket = None
         self.networked_mode = False
 
+        self.window = tk.Tk()
+        self.window.title("Checkers")
+        self.create_widgets()
+
+    def create_widgets(self):
+        self.board_frame = tk.Frame(self.window)
+        self.board_frame.grid(row=0, column=0)
+
+        self.info_frame = tk.Frame(self.window)
+        self.info_frame.grid(row=1, column=0)
+
+        self.info_label = tk.Label(self.info_frame, text="Welcome to Checkers")
+        self.info_label.pack()
+
+        self.restart_button = tk.Button(self.info_frame, text="Restart", command=self.restart_game)
+        self.restart_button.pack()
+
+        self.quit_button = tk.Button(self.info_frame, text="Quit", command=self.window.quit)
+        self.quit_button.pack()
+
+        self.board_buttons = [[None for _ in range(self.board.size)] for _ in range(self.board.size)]
+        for r in range(self.board.size):
+            for c in range(self.board.size):
+                button = tk.Button(self.board_frame, width=4, height=2, command=lambda row=r, col=c: self.on_square_click(row, col))
+                button.grid(row=r, column=c)
+                self.board_buttons[r][c] = button
+
+        self.update_gui()
+
+    def on_square_click(self, row, col):
+        # Add functionality for handling square clicks
+        pass
+
+    def update_gui(self):
+        for r in range(self.board.size):
+            for c in range(self.board.size):
+                piece = self.board.board[r][c]
+                if piece:
+                    self.board_buttons[r][c].config(text=str(piece), bg='light grey' if piece.color == "white" else 'dark grey')
+                else:
+                    self.board_buttons[r][c].config(text="", bg='white' if (r + c) % 2 == 0 else 'black')
+
     def load_profiles(self):
         try:
             with open("profiles.json", "r") as f:
@@ -227,36 +270,24 @@ class Game:
             json.dump(self.user_profiles, f)
 
     def start(self):
-        print("Welcome to Checkers!")
-        while True:
-            mode = input("Select mode: 1 for Single Player, 2 for Multiplayer, 3 for Networked Multiplayer, 4 for Leaderboard, 0 to Quit: ").strip()
-            if mode == '0':
-                print("Exiting game.")
-                break
-            elif mode == '1':
-                self.current_profile = input("Enter your profile name: ").strip()
-                if self.current_profile not in self.user_profiles:
-                    self.user_profiles[self.current_profile] = {"wins": 0, "losses": 0}
-                    self.save_profiles()
-                self.play_single_player()
-            elif mode == '2':
-                self.play_multiplayer()
-            elif mode == '3':
-                self.setup_networked_mode()
-            elif mode == '4':
-                self.view_leaderboard()
-            else:
-                print("Invalid mode. Please choose 1, 2, 3, 4, or 0.")
+        self.window.mainloop()
+
+    def restart_game(self):
+        self.board = Board()
+        self.current_turn = "white"
+        self.move_history = []
+        self.move_count = 0
+        self.update_gui()
 
     def setup_networked_mode(self):
-        choice = input("Select role: 1 for Server, 2 for Client: ").strip()
+        choice = simpledialog.askstring("Networked Mode", "Select role: 1 for Server, 2 for Client:")
         if choice == '1':
             self.start_server()
         elif choice == '2':
             self.start_client()
         else:
-            print("Invalid choice.")
-    
+            messagebox.showerror("Error", "Invalid choice.")
+
     def start_server(self):
         self.networked_mode = True
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -265,14 +296,40 @@ class Game:
         print("Waiting for a client to connect...")
         self.client_socket, _ = self.server_socket.accept()
         print("Client connected.")
-        self.play_multiplayer()
+        threading.Thread(target=self.listen_for_client, daemon=True).start()
 
     def start_client(self):
         self.networked_mode = True
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_socket.connect(('localhost', 12345))
         print("Connected to server.")
-        self.play_multiplayer()
+        threading.Thread(target=self.listen_for_server, daemon=True).start()
+
+    def listen_for_client(self):
+        while True:
+            try:
+                message = self.client_socket.recv(1024).decode()
+                if message:
+                    start_row, start_col, end_row, end_col = map(int, message.split())
+                    self.handle_remote_move(start_row, start_col, end_row, end_col)
+                else:
+                    break
+            except Exception as e:
+                print(f"Error: {e}")
+                break
+
+    def listen_for_server(self):
+        while True:
+            try:
+                message = self.client_socket.recv(1024).decode()
+                if message:
+                    start_row, start_col, end_row, end_col = map(int, message.split())
+                    self.handle_remote_move(start_row, start_col, end_row, end_col)
+                else:
+                    break
+            except Exception as e:
+                print(f"Error: {e}")
+                break
 
     def send_message(self, message):
         if self.networked_mode:
@@ -281,31 +338,30 @@ class Game:
                     self.client_socket.sendall(message.encode())
                 else:
                     self.client_socket.sendall(message.encode())
-            except:
-                print("Failed to send message.")
-    
-    def receive_message(self):
-        if self.networked_mode:
-            try:
-                message = self.client_socket.recv(1024).decode()
-                return message
-            except:
-                print("Failed to receive message.")
-                return None
+            except Exception as e:
+                print(f"Failed to send message: {e}")
+
+    def handle_remote_move(self, start_row, start_col, end_row, end_col):
+        if self.board.valid_move(start_row, start_col, end_row, end_col):
+            self.board.perform_move(start_row, start_col, end_row, end_col)
+            self.update_gui()
+            if self.board.get_winner():
+                self.handle_end_game()
+        else:
+            messagebox.showerror("Invalid Move", "The move is not valid!")
 
     def play_single_player(self):
         while True:
-            self.board.print_board()
+            self.update_gui()
             winner = self.board.get_winner()
             if winner:
-                print(f"{winner.capitalize()} wins!")
+                messagebox.showinfo("Game Over", f"{winner.capitalize()} wins!")
                 self.update_profile(winner)
                 self.update_stats(winner)
                 break
 
             if self.current_turn == "white":
-                print(f"{self.current_turn}'s turn")
-                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, 'hint' for move hint, 'save' to save game, 'load' to load game, 'difficulty' to change AI difficulty, 'customize' to customize board, 'leaderboard' to view leaderboard: ").strip()
+                user_input = simpledialog.askstring("Your Turn", "Enter start and end position (row col row col):")
                 if user_input.lower() == 'undo':
                     self.undo_move()
                     continue
@@ -339,44 +395,35 @@ class Game:
                 try:
                     start_row, start_col, end_row, end_col = map(int, user_input.split())
                 except ValueError:
-                    print("Invalid input format. Please enter four integers separated by spaces.")
+                    messagebox.showerror("Invalid Input", "Invalid input format. Please enter four integers separated by spaces.")
                     continue
             else:
-                print(f"{self.current_turn}'s turn (AI)")
                 start_row, start_col, end_row, end_col = self.get_ai_move()
-                print(f"AI moves: {start_row} {start_col} -> {end_row} {end_col}")
+                messagebox.showinfo("AI Move", f"AI moves: {start_row} {start_col} -> {end_row} {end_col}")
 
             if self.board.valid_move(start_row, start_col, end_row, end_col):
                 self.save_state(start_row, start_col, end_row, end_col)
                 self.board.perform_move(start_row, start_col, end_row, end_col)
                 if self.board.get_possible_captures(end_row, end_col):
-                    print(f"{self.current_turn} must continue capturing")
+                    messagebox.showinfo("Capture", f"{self.current_turn} must continue capturing")
                 else:
                     self.current_turn = "black" if self.current_turn == "white" else "white"
                 self.move_count += 1
             else:
-                print("Invalid move, try again")
+                messagebox.showerror("Invalid Move", "Invalid move, try again")
 
     def play_multiplayer(self):
         while True:
-            self.board.print_board()
+            self.update_gui()
             winner = self.board.get_winner()
             if winner:
-                print(f"{winner.capitalize()} wins!")
+                messagebox.showinfo("Game Over", f"{winner.capitalize()} wins!")
                 self.update_stats(winner)
                 self.update_multiplayer_stats(winner)
                 break
 
-            print(f"{self.current_turn}'s turn")
-            if self.networked_mode:
-                message = self.receive_message()
-                if message:
-                    start_row, start_col, end_row, end_col = map(int, message.split())
-                else:
-                    print("Failed to receive move from opponent.")
-                    continue
-            else:
-                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, 'customize' to customize board, 'leaderboard' to view leaderboard: ").strip()
+            if self.current_turn == "white":
+                user_input = simpledialog.askstring("Your Turn", "Enter start and end position (row col row col):")
                 if user_input.lower() == 'undo':
                     self.undo_move()
                     continue
@@ -398,89 +445,96 @@ class Game:
                 try:
                     start_row, start_col, end_row, end_col = map(int, user_input.split())
                 except ValueError:
-                    print("Invalid input format. Please enter four integers separated by spaces.")
+                    messagebox.showerror("Invalid Input", "Invalid input format. Please enter four integers separated by spaces.")
+                    continue
+                if self.networked_mode:
+                    self.send_message(f"{start_row} {start_col} {end_row} {end_col}")
+            else:
+                message = self.receive_message()
+                if message:
+                    start_row, start_col, end_row, end_col = map(int, message.split())
+                else:
                     continue
 
             if self.board.valid_move(start_row, start_col, end_row, end_col):
                 self.save_state(start_row, start_col, end_row, end_col)
                 self.board.perform_move(start_row, start_col, end_row, end_col)
-                if self.networked_mode:
-                    self.send_message(f"{start_row} {start_col} {end_row} {end_col}")
                 if self.board.get_possible_captures(end_row, end_col):
-                    print(f"{self.current_turn} must continue capturing")
+                    messagebox.showinfo("Capture", f"{self.current_turn} must continue capturing")
                 else:
                     self.current_turn = "black" if self.current_turn == "white" else "white"
                 self.move_count += 1
             else:
-                print("Invalid move, try again")
+                messagebox.showerror("Invalid Move", "Invalid move, try again")
 
     def get_ai_move(self):
-        best_move = self.board.get_best_move(self.current_turn, self.difficulty)
-        return best_move if best_move else (0, 0, 0, 0)
+        return self.board.get_best_move(self.current_turn, self.difficulty)
 
     def save_state(self, start_row, start_col, end_row, end_col):
-        self.move_history.append((start_row, start_col, end_row, end_col, self.board.board))
+        self.move_history.append((start_row, start_col, end_row, end_col))
         with open("game_state.pkl", "wb") as f:
-            pickle.dump((self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty), f)
+            cloudpickle.dump((self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty), f)
 
     def undo_move(self):
-        if not self.move_history:
-            print("No moves to undo")
-            return
-        self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty = self.move_history.pop()
-        print("Move undone")
+        if self.move_history:
+            last_move = self.move_history.pop()
+            start_row, start_col, end_row, end_col = last_move
+            self.board.move_piece(end_row, end_col, start_row, start_col)
+            self.current_turn = "black" if self.current_turn == "white" else "white"
+            self.move_count -= 1
+            self.update_gui()
+        else:
+            messagebox.showinfo("Undo", "No moves to undo.")
 
     def view_history(self):
-        for i, move in enumerate(self.move_history):
-            print(f"Move {i+1}: {move}")
+        history_str = "\n".join([f"Move from {start_row},{start_col} to {end_row},{end_col}" for start_row, start_col, end_row, end_col in self.move_history])
+        messagebox.showinfo("Move History", history_str or "No moves made yet.")
 
     def replay_game(self):
-        for board_state in self.move_history:
-            self.board.board = board_state[4]
-            self.board.print_board()
-            input("Press Enter to continue...")
+        self.restart_game()
+        for move in self.move_history:
+            start_row, start_col, end_row, end_col = move
+            self.board.perform_move(start_row, start_col, end_row, end_col)
+            self.update_gui()
+            self.window.after(1000)  # Pause for 1 second
 
     def show_hint(self):
         best_move = self.board.get_best_move(self.current_turn, self.difficulty)
         if best_move:
-            print(f"Hint: Move {best_move[0]} {best_move[1]} to {best_move[2]} {best_move[3]}")
+            messagebox.showinfo("Hint", f"Hint: Move from ({best_move[0]},{best_move[1]}) to ({best_move[2]},{best_move[3]})")
         else:
-            print("No available moves or captures.")
+            messagebox.showinfo("Hint", "No available moves or captures.")
 
     def save_game(self):
         with open("game_save.pkl", "wb") as f:
-            pickle.dump((self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty), f)
-        print("Game saved")
+            cloudpickle.dump((self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty), f)
+        messagebox.showinfo("Save Game", "Game saved")
 
     def load_game(self):
         try:
             with open("game_save.pkl", "rb") as f:
-                self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty = pickle.load(f)
-            print("Game loaded")
+                self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty = cloudpickle.load(f)
+            self.update_gui()
+            messagebox.showinfo("Load Game", "Game loaded")
         except FileNotFoundError:
-            print("No saved game found")
+            messagebox.showerror("Load Game", "No saved game found")
 
     def change_difficulty(self):
-        try:
-            new_difficulty = int(input("Enter new difficulty level (1-5): ").strip())
-            if 1 <= new_difficulty <= 5:
-                self.difficulty = new_difficulty
-                print(f"Difficulty set to {self.difficulty}")
-            else:
-                print("Invalid difficulty level. Please enter a number between 1 and 5.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
+        new_difficulty = simpledialog.askinteger("Change Difficulty", "Enter new difficulty level (1-5):")
+        if new_difficulty and 1 <= new_difficulty <= 5:
+            self.difficulty = new_difficulty
+            messagebox.showinfo("Difficulty Change", f"Difficulty set to {self.difficulty}")
+        else:
+            messagebox.showerror("Difficulty Change", "Invalid difficulty level. Please enter a number between 1 and 5.")
 
     def customize_board(self):
-        try:
-            new_size = int(input("Enter new board size (must be an even number): ").strip())
-            if new_size % 2 == 0 and new_size >= 6:
-                self.board = Board(size=new_size)
-                print(f"Board size set to {new_size}")
-            else:
-                print("Invalid size. Please enter an even number greater than or equal to 6.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
+        new_size = simpledialog.askinteger("Customize Board", "Enter new board size (must be an even number):")
+        if new_size and new_size % 2 == 0 and new_size >= 6:
+            self.board = Board(size=new_size)
+            self.update_gui()
+            messagebox.showinfo("Customize Board", f"Board size set to {new_size}")
+        else:
+            messagebox.showerror("Customize Board", "Invalid size. Please enter an even number greater than or equal to 6.")
 
     def update_profile(self, winner):
         if self.current_profile:
@@ -507,22 +561,23 @@ class Game:
             self.multiplayer_stats["black"]["white"] = self.multiplayer_stats["black"].get("white", 0) + 1
 
     def view_stats(self):
-        print(f"White Wins: {self.stats['white_wins']}")
-        print(f"Black Wins: {self.stats['black_wins']}")
-        print(f"Draws: {self.stats['draws']}")
-        print("Multiplayer Stats:")
+        stats_str = (f"White Wins: {self.stats['white_wins']}\n"
+                     f"Black Wins: {self.stats['black_wins']}\n"
+                     f"Draws: {self.stats['draws']}\n"
+                     "Multiplayer Stats:")
         for color, stats in self.multiplayer_stats.items():
-            print(f"{color.capitalize()}:")
+            stats_str += f"\n{color.capitalize()}:"
             for opponent, wins in stats.items():
-                print(f"  {opponent}: {wins} wins")
+                stats_str += f"\n  {opponent}: {wins} wins"
+        messagebox.showinfo("Statistics", stats_str)
 
     def view_leaderboard(self):
         leaderboard = requests.get("https://example.com/leaderboard").json()
-        print("Leaderboard:")
+        leaderboard_str = "Leaderboard:"
         for rank, player in enumerate(leaderboard, start=1):
-            print(f"Rank {rank}: {player['name']} - Wins: {player['wins']}")
+            leaderboard_str += f"\nRank {rank}: {player['name']} - Wins: {player['wins']}"
+        messagebox.showinfo("Leaderboard", leaderboard_str)
 
 if __name__ == "__main__":
     game = Game()
     game.start()
-Cloud 
