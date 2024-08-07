@@ -1,5 +1,6 @@
 import random
 import copy
+import pickle
 
 class Piece:
     def __init__(self, color):
@@ -178,10 +179,11 @@ class Board:
                     break
             return min_eval
 
-    def get_best_move(self, color):
+    def get_best_move(self, color, difficulty=2):
         best_move = None
         best_value = float('-inf') if color == "black" else float('inf')
-        depth = 4 if color == "black" else 3  # Adjust depth based on player
+        depth = 4 if color == "black" else 3  # Default depth based on player
+        depth = depth + difficulty if color == "black" else depth - difficulty
 
         for move in self.get_all_moves(color):
             new_board = copy.deepcopy(self)
@@ -200,6 +202,7 @@ class Game:
         self.history = []
         self.move_history = []
         self.move_count = 0
+        self.difficulty = 2
 
     def start(self):
         while True:
@@ -211,7 +214,7 @@ class Game:
 
             if self.current_turn == "white":
                 print(f"{self.current_turn}'s turn")
-                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, or 'stats' to view game statistics: ").strip()
+                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, 'hint' for move hint, 'save' to save game, 'load' to load game, or 'difficulty' to change AI difficulty: ").strip()
                 if user_input.lower() == 'undo':
                     self.undo_move()
                     continue
@@ -223,6 +226,18 @@ class Game:
                     continue
                 if user_input.lower() == 'stats':
                     self.view_stats()
+                    continue
+                if user_input.lower() == 'hint':
+                    self.show_hint()
+                    continue
+                if user_input.lower() == 'save':
+                    self.save_game()
+                    continue
+                if user_input.lower() == 'load':
+                    self.load_game()
+                    continue
+                if user_input.lower() == 'difficulty':
+                    self.change_difficulty()
                     continue
                 try:
                     start_row, start_col, end_row, end_col = map(int, user_input.split())
@@ -288,8 +303,43 @@ class Game:
     def view_stats(self):
         print(f"Total moves made: {self.move_count}")
 
+    def show_hint(self):
+        if self.current_turn == "black":
+            move = self.get_ai_move()
+            if move:
+                print(f"Hint: Move from ({move[0]}, {move[1]}) to ({move[2]}, {move[3]})")
+            else:
+                print("No available moves for AI.")
+        else:
+            print("Hint feature is only available for AI.")
+
+    def save_game(self):
+        with open("checkers_save.pkl", "wb") as f:
+            pickle.dump((self.board, self.current_turn, self.history, self.move_history, self.move_count, self.difficulty), f)
+        print("Game saved.")
+
+    def load_game(self):
+        try:
+            with open("checkers_save.pkl", "rb") as f:
+                self.board, self.current_turn, self.history, self.move_history, self.move_count, self.difficulty = pickle.load(f)
+            print("Game loaded.")
+        except FileNotFoundError:
+            print("No saved game found.")
+
+    def change_difficulty(self):
+        difficulty = input("Enter AI difficulty level (1-3): ").strip()
+        try:
+            difficulty = int(difficulty)
+            if 1 <= difficulty <= 3:
+                self.difficulty = difficulty
+                print(f"AI difficulty set to {difficulty}.")
+            else:
+                print("Invalid difficulty level. Please enter a number between 1 and 3.")
+        except ValueError:
+            print("Invalid input. Please enter a number between 1 and 3.")
+
     def get_ai_move(self):
-        best_move = self.board.get_best_move("black")
+        best_move = self.board.get_best_move("black", self.difficulty)
         if best_move is None:
             raise ValueError("No possible moves for AI")
         
