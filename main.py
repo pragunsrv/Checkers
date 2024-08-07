@@ -1,3 +1,5 @@
+import random
+
 class Piece:
     def __init__(self, color):
         self.color = color
@@ -115,9 +117,13 @@ class Game:
     def start(self):
         while True:
             self.board.print_board()
-            print(f"{self.current_turn}'s turn")
-            start_row, start_col = map(int, input("Enter start position (row col): ").split())
-            end_row, end_col = map(int, input("Enter end position (row col): ").split())
+            if self.current_turn == "white":
+                print(f"{self.current_turn}'s turn")
+                start_row, start_col = map(int, input("Enter start position (row col): ").split())
+                end_row, end_col = map(int, input("Enter end position (row col): ").split())
+            else:
+                print(f"{self.current_turn}'s turn (AI)")
+                start_row, start_col, end_row, end_col = self.get_ai_move()
 
             if self.board.valid_move(start_row, start_col, end_row, end_col):
                 self.board.perform_move(start_row, start_col, end_row, end_col)
@@ -127,6 +133,23 @@ class Game:
                     self.current_turn = "black" if self.current_turn == "white" else "white"
             else:
                 print("Invalid move, try again")
+
+    def get_ai_move(self):
+        possible_moves = []
+        for row in range(8):
+            for col in range(8):
+                if self.board.board[row][col] and self.board.board[row][col].color == "black":
+                    moves = self.board.get_possible_moves(row, col)
+                    captures = self.board.get_possible_captures(row, col)
+                    if captures:
+                        possible_moves.extend([(row, col, end_row, end_col) for end_row, end_col in captures])
+                    else:
+                        possible_moves.extend([(row, col, end_row, end_col) for end_row, end_col in moves])
+
+        if not possible_moves:
+            raise ValueError("No possible moves for AI")
+        
+        return random.choice(possible_moves)
 
 if __name__ == "__main__":
     game = Game()
