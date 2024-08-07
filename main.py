@@ -4,6 +4,9 @@ import pickle
 import json
 import socket
 import threading
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+import requests
 
 class Piece:
     def __init__(self, color):
@@ -226,7 +229,7 @@ class Game:
     def start(self):
         print("Welcome to Checkers!")
         while True:
-            mode = input("Select mode: 1 for Single Player, 2 for Multiplayer, 3 for Networked Multiplayer, or 0 to Quit: ").strip()
+            mode = input("Select mode: 1 for Single Player, 2 for Multiplayer, 3 for Networked Multiplayer, 4 for Leaderboard, 0 to Quit: ").strip()
             if mode == '0':
                 print("Exiting game.")
                 break
@@ -240,8 +243,10 @@ class Game:
                 self.play_multiplayer()
             elif mode == '3':
                 self.setup_networked_mode()
+            elif mode == '4':
+                self.view_leaderboard()
             else:
-                print("Invalid mode. Please choose 1, 2, 3, or 0.")
+                print("Invalid mode. Please choose 1, 2, 3, 4, or 0.")
 
     def setup_networked_mode(self):
         choice = input("Select role: 1 for Server, 2 for Client: ").strip()
@@ -300,7 +305,7 @@ class Game:
 
             if self.current_turn == "white":
                 print(f"{self.current_turn}'s turn")
-                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, 'hint' for move hint, 'save' to save game, 'load' to load game, 'difficulty' to change AI difficulty, or 'customize' to customize board: ").strip()
+                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, 'hint' for move hint, 'save' to save game, 'load' to load game, 'difficulty' to change AI difficulty, 'customize' to customize board, 'leaderboard' to view leaderboard: ").strip()
                 if user_input.lower() == 'undo':
                     self.undo_move()
                     continue
@@ -327,6 +332,9 @@ class Game:
                     continue
                 if user_input.lower() == 'customize':
                     self.customize_board()
+                    continue
+                if user_input.lower() == 'leaderboard':
+                    self.view_leaderboard()
                     continue
                 try:
                     start_row, start_col, end_row, end_col = map(int, user_input.split())
@@ -368,7 +376,7 @@ class Game:
                     print("Failed to receive move from opponent.")
                     continue
             else:
-                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, or 'customize' to customize board: ").strip()
+                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, 'customize' to customize board, 'leaderboard' to view leaderboard: ").strip()
                 if user_input.lower() == 'undo':
                     self.undo_move()
                     continue
@@ -383,6 +391,9 @@ class Game:
                     continue
                 if user_input.lower() == 'customize':
                     self.customize_board()
+                    continue
+                if user_input.lower() == 'leaderboard':
+                    self.view_leaderboard()
                     continue
                 try:
                     start_row, start_col, end_row, end_col = map(int, user_input.split())
@@ -432,9 +443,9 @@ class Game:
     def show_hint(self):
         best_move = self.board.get_best_move(self.current_turn, self.difficulty)
         if best_move:
-            print(f"Hint: Move from {best_move[0]}, {best_move[1]} to {best_move[2]}, {best_move[3]}")
+            print(f"Hint: Move {best_move[0]} {best_move[1]} to {best_move[2]} {best_move[3]}")
         else:
-            print("No hint available")
+            print("No available moves or captures.")
 
     def save_game(self):
         with open("game_save.pkl", "wb") as f:
@@ -505,6 +516,13 @@ class Game:
             for opponent, wins in stats.items():
                 print(f"  {opponent}: {wins} wins")
 
+    def view_leaderboard(self):
+        leaderboard = requests.get("https://example.com/leaderboard").json()
+        print("Leaderboard:")
+        for rank, player in enumerate(leaderboard, start=1):
+            print(f"Rank {rank}: {player['name']} - Wins: {player['wins']}")
+
 if __name__ == "__main__":
     game = Game()
     game.start()
+Cloud 
