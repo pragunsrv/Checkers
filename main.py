@@ -2,6 +2,8 @@ import random
 import copy
 import pickle
 import json
+import socket
+import threading
 
 class Piece:
     def __init__(self, color):
@@ -199,7 +201,6 @@ class Game:
     def __init__(self):
         self.board = Board()
         self.current_turn = "white"
-        self.history = []
         self.move_history = []
         self.move_count = 0
         self.difficulty = 2
@@ -207,6 +208,9 @@ class Game:
         self.current_profile = None
         self.stats = {"white_wins": 0, "black_wins": 0, "draws": 0}
         self.multiplayer_stats = {"white": {}, "black": {}}
+        self.server_socket = None
+        self.client_socket = None
+        self.networked_mode = False
 
     def load_profiles(self):
         try:
@@ -222,7 +226,7 @@ class Game:
     def start(self):
         print("Welcome to Checkers!")
         while True:
-            mode = input("Select mode: 1 for Single Player, 2 for Multiplayer, or 0 to Quit: ").strip()
+            mode = input("Select mode: 1 for Single Player, 2 for Multiplayer, 3 for Networked Multiplayer, or 0 to Quit: ").strip()
             if mode == '0':
                 print("Exiting game.")
                 break
@@ -234,8 +238,55 @@ class Game:
                 self.play_single_player()
             elif mode == '2':
                 self.play_multiplayer()
+            elif mode == '3':
+                self.setup_networked_mode()
             else:
-                print("Invalid mode. Please choose 1, 2, or 0.")
+                print("Invalid mode. Please choose 1, 2, 3, or 0.")
+
+    def setup_networked_mode(self):
+        choice = input("Select role: 1 for Server, 2 for Client: ").strip()
+        if choice == '1':
+            self.start_server()
+        elif choice == '2':
+            self.start_client()
+        else:
+            print("Invalid choice.")
+    
+    def start_server(self):
+        self.networked_mode = True
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind(('localhost', 12345))
+        self.server_socket.listen(1)
+        print("Waiting for a client to connect...")
+        self.client_socket, _ = self.server_socket.accept()
+        print("Client connected.")
+        self.play_multiplayer()
+
+    def start_client(self):
+        self.networked_mode = True
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.connect(('localhost', 12345))
+        print("Connected to server.")
+        self.play_multiplayer()
+
+    def send_message(self, message):
+        if self.networked_mode:
+            try:
+                if self.server_socket:
+                    self.client_socket.sendall(message.encode())
+                else:
+                    self.client_socket.sendall(message.encode())
+            except:
+                print("Failed to send message.")
+    
+    def receive_message(self):
+        if self.networked_mode:
+            try:
+                message = self.client_socket.recv(1024).decode()
+                return message
+            except:
+                print("Failed to receive message.")
+                return None
 
     def play_single_player(self):
         while True:
@@ -299,7 +350,6 @@ class Game:
                 print("Invalid move, try again")
 
     def play_multiplayer(self):
-        self.current_turn = "white"
         while True:
             self.board.print_board()
             winner = self.board.get_winner()
@@ -310,31 +360,41 @@ class Game:
                 break
 
             print(f"{self.current_turn}'s turn")
-            user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, or 'customize' to customize board: ").strip()
-            if user_input.lower() == 'undo':
-                self.undo_move()
-                continue
-            if user_input.lower() == 'history':
-                self.view_history()
-                continue
-            if user_input.lower() == 'replay':
-                self.replay_game()
-                continue
-            if user_input.lower() == 'stats':
-                self.view_stats()
-                continue
-            if user_input.lower() == 'customize':
-                self.customize_board()
-                continue
-            try:
-                start_row, start_col, end_row, end_col = map(int, user_input.split())
-            except ValueError:
-                print("Invalid input format. Please enter four integers separated by spaces.")
-                continue
+            if self.networked_mode:
+                message = self.receive_message()
+                if message:
+                    start_row, start_col, end_row, end_col = map(int, message.split())
+                else:
+                    print("Failed to receive move from opponent.")
+                    continue
+            else:
+                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, or 'customize' to customize board: ").strip()
+                if user_input.lower() == 'undo':
+                    self.undo_move()
+                    continue
+                if user_input.lower() == 'history':
+                    self.view_history()
+                    continue
+                if user_input.lower() == 'replay':
+                    self.replay_game()
+                    continue
+                if user_input.lower() == 'stats':
+                    self.view_stats()
+                    continue
+                if user_input.lower() == 'customize':
+                    self.customize_board()
+                    continue
+                try:
+                    start_row, start_col, end_row, end_col = map(int, user_input.split())
+                except ValueError:
+                    print("Invalid input format. Please enter four integers separated by spaces.")
+                    continue
 
             if self.board.valid_move(start_row, start_col, end_row, end_col):
                 self.save_state(start_row, start_col, end_row, end_col)
                 self.board.perform_move(start_row, start_col, end_row, end_col)
+                if self.networked_mode:
+                    self.send_message(f"{start_row} {start_col} {end_row} {end_col}")
                 if self.board.get_possible_captures(end_row, end_col):
                     print(f"{self.current_turn} must continue capturing")
                 else:
@@ -387,27 +447,33 @@ class Game:
                 self.board.board, self.current_turn, self.move_history, self.move_count, self.difficulty = pickle.load(f)
             print("Game loaded")
         except FileNotFoundError:
-            print("No saved game found.")
+            print("No saved game found")
 
     def change_difficulty(self):
-        new_difficulty = input("Enter new difficulty level (1-5): ").strip()
-        if new_difficulty.isdigit() and 1 <= int(new_difficulty) <= 5:
-            self.difficulty = int(new_difficulty)
-            print(f"AI difficulty set to {self.difficulty}.")
-        else:
-            print("Invalid difficulty level. Please enter a number between 1 and 5.")
+        try:
+            new_difficulty = int(input("Enter new difficulty level (1-5): ").strip())
+            if 1 <= new_difficulty <= 5:
+                self.difficulty = new_difficulty
+                print(f"Difficulty set to {self.difficulty}")
+            else:
+                print("Invalid difficulty level. Please enter a number between 1 and 5.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
 
     def customize_board(self):
-        new_size = input("Enter new board size (even number between 6 and 12): ").strip()
-        if new_size.isdigit() and 6 <= int(new_size) <= 12 and int(new_size) % 2 == 0:
-            self.board = Board(size=int(new_size))
-            print(f"Board size set to {new_size}.")
-        else:
-            print("Invalid board size. Please enter an even number between 6 and 12.")
+        try:
+            new_size = int(input("Enter new board size (must be an even number): ").strip())
+            if new_size % 2 == 0 and new_size >= 6:
+                self.board = Board(size=new_size)
+                print(f"Board size set to {new_size}")
+            else:
+                print("Invalid size. Please enter an even number greater than or equal to 6.")
+        except ValueError:
+            print("Invalid input. Please enter a number.")
 
     def update_profile(self, winner):
         if self.current_profile:
-            if winner == "white":
+            if winner == self.current_profile:
                 self.user_profiles[self.current_profile]["wins"] += 1
             else:
                 self.user_profiles[self.current_profile]["losses"] += 1
@@ -416,18 +482,18 @@ class Game:
     def update_stats(self, winner):
         if winner == "white":
             self.stats["white_wins"] += 1
-        else:
+        elif winner == "black":
             self.stats["black_wins"] += 1
+        else:
+            self.stats["draws"] += 1
 
     def update_multiplayer_stats(self, winner):
-        if winner not in self.multiplayer_stats["white"]:
-            self.multiplayer_stats["white"][winner] = 0
-        if winner not in self.multiplayer_stats["black"]:
-            self.multiplayer_stats["black"][winner] = 0
         if winner == "white":
-            self.multiplayer_stats["white"][winner] += 1
+            self.multiplayer_stats["white"]["white"] = self.multiplayer_stats["white"].get("white", 0) + 1
+            self.multiplayer_stats["black"]["black"] = self.multiplayer_stats["black"].get("black", 0) + 1
         else:
-            self.multiplayer_stats["black"][winner] += 1
+            self.multiplayer_stats["white"]["black"] = self.multiplayer_stats["white"].get("black", 0) + 1
+            self.multiplayer_stats["black"]["white"] = self.multiplayer_stats["black"].get("white", 0) + 1
 
     def view_stats(self):
         print(f"White Wins: {self.stats['white_wins']}")
