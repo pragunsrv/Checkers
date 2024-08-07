@@ -210,12 +210,15 @@ class Game:
 
             if self.current_turn == "white":
                 print(f"{self.current_turn}'s turn")
-                user_input = input("Enter start and end position (row col row col) or 'undo' to undo last move, 'history' to view move history: ").strip()
+                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, or 'replay' to replay game: ").strip()
                 if user_input.lower() == 'undo':
                     self.undo_move()
                     continue
                 if user_input.lower() == 'history':
                     self.view_history()
+                    continue
+                if user_input.lower() == 'replay':
+                    self.replay_game()
                     continue
                 try:
                     start_row, start_col, end_row, end_col = map(int, user_input.split())
@@ -256,6 +259,23 @@ class Game:
             print("Move history:")
             for i, move in enumerate(self.move_history):
                 print(f"Move {i + 1}: {move[0]} {move[1]} -> {move[2]} {move[3]}")
+
+    def replay_game(self):
+        if not self.move_history:
+            print("No moves to replay.")
+            return
+
+        print("Replaying game...")
+        self.board = Board()
+        self.current_turn = "white"
+        for move in self.move_history:
+            self.board.perform_move(*move)
+            self.board.print_board()
+            winner = self.board.get_winner()
+            if winner:
+                print(f"{winner.capitalize()} wins!")
+                return
+            self.current_turn = "black" if self.current_turn == "white" else "white"
 
     def get_ai_move(self):
         best_move = self.board.get_best_move("black")
