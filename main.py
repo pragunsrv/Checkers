@@ -109,6 +109,27 @@ class Board:
                 captures.append((new_row, new_col))
         return captures
 
+    def has_moves(self, color):
+        for row in range(8):
+            for col in range(8):
+                if self.board[row][col] and self.board[row][col].color == color:
+                    if self.get_possible_moves(row, col) or self.get_possible_captures(row, col):
+                        return True
+        return False
+
+    def get_winner(self):
+        white_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == "white")
+        black_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == "black")
+        if white_pieces == 0:
+            return "black"
+        elif black_pieces == 0:
+            return "white"
+        elif not self.has_moves("white"):
+            return "black"
+        elif not self.has_moves("black"):
+            return "white"
+        return None
+
 class Game:
     def __init__(self):
         self.board = Board()
@@ -117,6 +138,11 @@ class Game:
     def start(self):
         while True:
             self.board.print_board()
+            winner = self.board.get_winner()
+            if winner:
+                print(f"{winner.capitalize()} wins!")
+                break
+
             if self.current_turn == "white":
                 print(f"{self.current_turn}'s turn")
                 start_row, start_col = map(int, input("Enter start position (row col): ").split())
