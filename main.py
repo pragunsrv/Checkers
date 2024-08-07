@@ -1,6 +1,7 @@
 import random
 import copy
 import pickle
+import json
 
 class Piece:
     def __init__(self, color):
@@ -14,28 +15,27 @@ class Piece:
         return f"{'K' if self.king else ''}{self.color[0]}"
 
 class Board:
-    def __init__(self):
+    def __init__(self, size=8, colors=("white", "black")):
+        self.size = size
+        self.colors = colors
         self.board = self.create_board()
 
     def create_board(self):
-        board = []
-        for row in range(8):
-            board.append([None] * 8)
-        
-        for row in range(3):
-            for col in range(8):
+        board = [[None] * self.size for _ in range(self.size)]
+        for row in range(self.size // 2 - 1):
+            for col in range(self.size):
                 if (row + col) % 2 == 1:
-                    board[row][col] = Piece("black")
+                    board[row][col] = Piece(self.colors[1])
 
-        for row in range(5, 8):
-            for col in range(8):
+        for row in range(self.size // 2 + 1, self.size):
+            for col in range(self.size):
                 if (row + col) % 2 == 1:
-                    board[row][col] = Piece("white")
+                    board[row][col] = Piece(self.colors[0])
 
         return board
 
     def print_board(self):
-        print("  " + " ".join(str(i) for i in range(8)))
+        print("  " + " ".join(str(i) for i in range(self.size)))
         for i, row in enumerate(self.board):
             print(i, " ".join([str(piece) if piece else '.' for piece in row]))
         print()
@@ -50,7 +50,7 @@ class Board:
         self.board[start_row][start_col] = None
         self.board[end_row][end_col] = piece
 
-        if (piece.color == "white" and end_row == 0) or (piece.color == "black" and end_row == 7):
+        if (piece.color == self.colors[0] and end_row == 0) or (piece.color == self.colors[1] and end_row == self.size - 1):
             piece.make_king()
 
     def capture_piece(self, start_row, start_col, end_row, end_col):
@@ -61,16 +61,16 @@ class Board:
         self.board[middle_row][middle_col] = None
 
     def valid_move(self, start_row, start_col, end_row, end_col):
-        if not (0 <= start_row < 8 and 0 <= start_col < 8 and 0 <= end_row < 8 and 0 <= end_col < 8):
+        if not (0 <= start_row < self.size and 0 <= start_col < self.size and 0 <= end_row < self.size and 0 <= end_col < self.size):
             return False
         if self.board[start_row][start_col] is None:
             return False
         if self.board[end_row][end_col] is not None:
             return False
         piece = self.board[start_row][start_col]
-        if piece.color == "white" and not piece.king and end_row >= start_row:
+        if piece.color == self.colors[0] and not piece.king and end_row >= start_row:
             return False
-        if piece.color == "black" and not piece.king and end_row <= start_row:
+        if piece.color == self.colors[1] and not piece.king and end_row <= start_row:
             return False
         row_diff = abs(start_row - end_row)
         col_diff = abs(start_col - end_col)
@@ -114,37 +114,37 @@ class Board:
         return captures
 
     def has_moves(self, color):
-        for row in range(8):
-            for col in range(8):
+        for row in range(self.size):
+            for col in range(self.size):
                 if self.board[row][col] and self.board[row][col].color == color:
                     if self.get_possible_moves(row, col) or self.get_possible_captures(row, col):
                         return True
         return False
 
     def get_winner(self):
-        white_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == "white")
-        black_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == "black")
+        white_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == self.colors[0])
+        black_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == self.colors[1])
         if white_pieces == 0:
-            return "black"
+            return self.colors[1]
         elif black_pieces == 0:
-            return "white"
-        elif not self.has_moves("white"):
-            return "black"
-        elif not self.has_moves("black"):
-            return "white"
+            return self.colors[0]
+        elif not self.has_moves(self.colors[0]):
+            return self.colors[1]
+        elif not self.has_moves(self.colors[1]):
+            return self.colors[0]
         return None
 
     def evaluate(self):
-        white_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == "white")
-        black_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == "black")
-        white_kings = sum(1 for row in self.board for piece in row if piece and piece.color == "white" and piece.king)
-        black_kings = sum(1 for row in self.board for piece in row if piece and piece.color == "black" and piece.king)
+        white_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == self.colors[0])
+        black_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == self.colors[1])
+        white_kings = sum(1 for row in self.board for piece in row if piece and piece.color == self.colors[0] and piece.king)
+        black_kings = sum(1 for row in self.board for piece in row if piece and piece.color == self.colors[1] and piece.king)
         return black_pieces + 2 * black_kings - (white_pieces + 2 * white_kings)
 
     def get_all_moves(self, color):
         moves = []
-        for row in range(8):
-            for col in range(8):
+        for row in range(self.size):
+            for col in range(self.size):
                 if self.board[row][col] and self.board[row][col].color == color:
                     piece_moves = self.get_possible_moves(row, col)
                     piece_captures = self.get_possible_captures(row, col)
@@ -158,7 +158,7 @@ class Board:
 
         if maximizing_player:
             max_eval = float('-inf')
-            for move in self.get_all_moves("black"):
+            for move in self.get_all_moves(self.colors[1]):
                 new_board = copy.deepcopy(self)
                 new_board.perform_move(*move)
                 eval = new_board.minimax(depth - 1, False, alpha, beta)
@@ -169,7 +169,7 @@ class Board:
             return max_eval
         else:
             min_eval = float('inf')
-            for move in self.get_all_moves("white"):
+            for move in self.get_all_moves(self.colors[0]):
                 new_board = copy.deepcopy(self)
                 new_board.perform_move(*move)
                 eval = new_board.minimax(depth - 1, True, alpha, beta)
@@ -181,15 +181,15 @@ class Board:
 
     def get_best_move(self, color, difficulty=2):
         best_move = None
-        best_value = float('-inf') if color == "black" else float('inf')
-        depth = 4 if color == "black" else 3  # Default depth based on player
-        depth = depth + difficulty if color == "black" else depth - difficulty
+        best_value = float('-inf') if color == self.colors[1] else float('inf')
+        depth = 4 if color == self.colors[1] else 3
+        depth = depth + difficulty if color == self.colors[1] else depth - difficulty
 
         for move in self.get_all_moves(color):
             new_board = copy.deepcopy(self)
             new_board.perform_move(*move)
-            board_value = new_board.minimax(depth, color == "black", float('-inf'), float('inf'))
-            if (color == "black" and board_value > best_value) or (color == "white" and board_value < best_value):
+            board_value = new_board.minimax(depth, color == self.colors[1], float('-inf'), float('inf'))
+            if (color == self.colors[1] and board_value > best_value) or (color == self.colors[0] and board_value < best_value):
                 best_value = board_value
                 best_move = move
 
@@ -203,18 +203,37 @@ class Game:
         self.move_history = []
         self.move_count = 0
         self.difficulty = 2
+        self.user_profiles = self.load_profiles()
+        self.current_profile = None
+
+    def load_profiles(self):
+        try:
+            with open("profiles.json", "r") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+
+    def save_profiles(self):
+        with open("profiles.json", "w") as f:
+            json.dump(self.user_profiles, f)
 
     def start(self):
+        self.current_profile = input("Enter your profile name: ").strip()
+        if self.current_profile not in self.user_profiles:
+            self.user_profiles[self.current_profile] = {"wins": 0, "losses": 0}
+            self.save_profiles()
+
         while True:
             self.board.print_board()
             winner = self.board.get_winner()
             if winner:
                 print(f"{winner.capitalize()} wins!")
+                self.update_profile(winner)
                 break
 
             if self.current_turn == "white":
                 print(f"{self.current_turn}'s turn")
-                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, 'hint' for move hint, 'save' to save game, 'load' to load game, or 'difficulty' to change AI difficulty: ").strip()
+                user_input = input("Enter start and end position (row col row col), 'undo' to undo last move, 'history' to view move history, 'replay' to replay game, 'stats' to view game statistics, 'hint' for move hint, 'save' to save game, 'load' to load game, 'difficulty' to change AI difficulty, or 'customize' to customize board: ").strip()
                 if user_input.lower() == 'undo':
                     self.undo_move()
                     continue
@@ -239,6 +258,9 @@ class Game:
                 if user_input.lower() == 'difficulty':
                     self.change_difficulty()
                     continue
+                if user_input.lower() == 'customize':
+                    self.customize_board()
+                    continue
                 try:
                     start_row, start_col, end_row, end_col = map(int, user_input.split())
                 except ValueError:
@@ -259,6 +281,13 @@ class Game:
                 self.move_count += 1
             else:
                 print("Invalid move, try again")
+
+    def update_profile(self, winner):
+        if winner == self.current_profile:
+            self.user_profiles[self.current_profile]["wins"] += 1
+        else:
+            self.user_profiles[self.current_profile]["losses"] += 1
+        self.save_profiles()
 
     def save_state(self, start_row, start_col, end_row, end_col):
         self.history.append(copy.deepcopy(self.board))
@@ -301,6 +330,11 @@ class Game:
             self.move_count += 1
 
     def view_stats(self):
+        profile = self.user_profiles.get(self.current_profile, {})
+        wins = profile.get("wins", 0)
+        losses = profile.get("losses", 0)
+        print(f"Profile: {self.current_profile}")
+        print(f"Wins: {wins}, Losses: {losses}")
         print(f"Total moves made: {self.move_count}")
 
     def show_hint(self):
@@ -337,6 +371,21 @@ class Game:
                 print("Invalid difficulty level. Please enter a number between 1 and 3.")
         except ValueError:
             print("Invalid input. Please enter a number between 1 and 3.")
+
+    def customize_board(self):
+        size = input("Enter board size (e.g., 8 for 8x8): ").strip()
+        try:
+            size = int(size)
+            if size < 4:
+                print("Board size must be at least 4.")
+                return
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            return
+        
+        color1 = input("Enter color for white pieces: ").strip()
+        color2 = input("Enter color for black pieces: ").strip()
+        self.board = Board(size=size, colors=(color1, color2))
 
     def get_ai_move(self):
         best_move = self.board.get_best_move("black", self.difficulty)
