@@ -36,6 +36,7 @@ class Board:
     def print_board(self):
         for row in self.board:
             print(' '.join([str(piece) if piece else '.' for piece in row]))
+        print()
 
     def move_piece(self, start_row, start_col, end_row, end_col):
         if self.board[start_row][start_col] is None:
@@ -149,6 +150,33 @@ class Board:
                     moves.extend([(row, col, end_row, end_col) for end_row, end_col in piece_captures])
         return moves
 
+    def minimax(self, depth, maximizing_player, alpha, beta):
+        if depth == 0 or self.get_winner():
+            return self.evaluate()
+
+        if maximizing_player:
+            max_eval = float('-inf')
+            for move in self.get_all_moves("black"):
+                new_board = copy.deepcopy(self)
+                new_board.perform_move(*move)
+                eval = new_board.minimax(depth - 1, False, alpha, beta)
+                max_eval = max(max_eval, eval)
+                alpha = max(alpha, eval)
+                if beta <= alpha:
+                    break
+            return max_eval
+        else:
+            min_eval = float('inf')
+            for move in self.get_all_moves("white"):
+                new_board = copy.deepcopy(self)
+                new_board.perform_move(*move)
+                eval = new_board.minimax(depth - 1, True, alpha, beta)
+                min_eval = min(min_eval, eval)
+                beta = min(beta, eval)
+                if beta <= alpha:
+                    break
+            return min_eval
+
 class Game:
     def __init__(self):
         self.board = Board()
@@ -169,7 +197,11 @@ class Game:
                 if user_input.lower() == 'undo':
                     self.undo_move()
                     continue
-                start_row, start_col, end_row, end_col = map(int, user_input.split())
+                try:
+                    start_row, start_col, end_row, end_col = map(int, user_input.split())
+                except ValueError:
+                    print("Invalid input format. Please enter four integers separated by spaces.")
+                    continue
             else:
                 print(f"{self.current_turn}'s turn (AI)")
                 start_row, start_col, end_row, end_col = self.get_ai_move()
@@ -201,7 +233,7 @@ class Game:
         for move in self.board.get_all_moves("black"):
             new_board = copy.deepcopy(self.board)
             new_board.perform_move(*move)
-            board_value = new_board.evaluate()
+            board_value = new_board.minimax(3, False, float('-inf'), float('inf'))
             if board_value > best_value:
                 best_value = board_value
                 best_move = move
