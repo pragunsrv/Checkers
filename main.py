@@ -83,6 +83,30 @@ class Board:
             self.capture_piece(start_row, start_col, end_row, end_col)
         self.move_piece(start_row, start_col, end_row, end_col)
 
+    def get_possible_moves(self, row, col):
+        piece = self.board[row][col]
+        if piece is None:
+            return []
+        directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+        moves = []
+        for dr, dc in directions:
+            new_row, new_col = row + dr, col + dc
+            if self.valid_move(row, col, new_row, new_col):
+                moves.append((new_row, new_col))
+        return moves
+
+    def get_possible_captures(self, row, col):
+        piece = self.board[row][col]
+        if piece is None:
+            return []
+        directions = [(-2, -2), (-2, 2), (2, -2), (2, 2)]
+        captures = []
+        for dr, dc in directions:
+            new_row, new_col = row + dr, col + dc
+            if self.valid_move(row, col, new_row, new_col):
+                captures.append((new_row, new_col))
+        return captures
+
 class Game:
     def __init__(self):
         self.board = Board()
@@ -97,7 +121,10 @@ class Game:
 
             if self.board.valid_move(start_row, start_col, end_row, end_col):
                 self.board.perform_move(start_row, start_col, end_row, end_col)
-                self.current_turn = "black" if self.current_turn == "white" else "white"
+                if self.board.get_possible_captures(end_row, end_col):
+                    print(f"{self.current_turn} must continue capturing")
+                else:
+                    self.current_turn = "black" if self.current_turn == "white" else "white"
             else:
                 print("Invalid move, try again")
 
