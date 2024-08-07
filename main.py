@@ -1,4 +1,5 @@
 import random
+import copy
 
 class Piece:
     def __init__(self, color):
@@ -130,10 +131,29 @@ class Board:
             return "white"
         return None
 
+    def evaluate(self):
+        white_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == "white")
+        black_pieces = sum(1 for row in self.board for piece in row if piece and piece.color == "black")
+        white_kings = sum(1 for row in self.board for piece in row if piece and piece.color == "white" and piece.king)
+        black_kings = sum(1 for row in self.board for piece in row if piece and piece.color == "black" and piece.king)
+        return black_pieces + 2 * black_kings - (white_pieces + 2 * white_kings)
+
+    def get_all_moves(self, color):
+        moves = []
+        for row in range(8):
+            for col in range(8):
+                if self.board[row][col] and self.board[row][col].color == color:
+                    piece_moves = self.get_possible_moves(row, col)
+                    piece_captures = self.get_possible_captures(row, col)
+                    moves.extend([(row, col, end_row, end_col) for end_row, end_col in piece_moves])
+                    moves.extend([(row, col, end_row, end_col) for end_row, end_col in piece_captures])
+        return moves
+
 class Game:
     def __init__(self):
         self.board = Board()
         self.current_turn = "white"
+        self.history = []
 
     def start(self):
         while True:
@@ -145,13 +165,17 @@ class Game:
 
             if self.current_turn == "white":
                 print(f"{self.current_turn}'s turn")
-                start_row, start_col = map(int, input("Enter start position (row col): ").split())
-                end_row, end_col = map(int, input("Enter end position (row col): ").split())
+                user_input = input("Enter start and end position (row col row col) or 'undo' to undo last move: ").strip()
+                if user_input.lower() == 'undo':
+                    self.undo_move()
+                    continue
+                start_row, start_col, end_row, end_col = map(int, user_input.split())
             else:
                 print(f"{self.current_turn}'s turn (AI)")
                 start_row, start_col, end_row, end_col = self.get_ai_move()
 
             if self.board.valid_move(start_row, start_col, end_row, end_col):
+                self.save_state()
                 self.board.perform_move(start_row, start_col, end_row, end_col)
                 if self.board.get_possible_captures(end_row, end_col):
                     print(f"{self.current_turn} must continue capturing")
@@ -160,22 +184,32 @@ class Game:
             else:
                 print("Invalid move, try again")
 
-    def get_ai_move(self):
-        possible_moves = []
-        for row in range(8):
-            for col in range(8):
-                if self.board.board[row][col] and self.board.board[row][col].color == "black":
-                    moves = self.board.get_possible_moves(row, col)
-                    captures = self.board.get_possible_captures(row, col)
-                    if captures:
-                        possible_moves.extend([(row, col, end_row, end_col) for end_row, end_col in captures])
-                    else:
-                        possible_moves.extend([(row, col, end_row, end_col) for end_row, end_col in moves])
+    def save_state(self):
+        self.history.append(copy.deepcopy(self.board))
 
-        if not possible_moves:
+    def undo_move(self):
+        if self.history:
+            self.board = self.history.pop()
+            self.current_turn = "black" if self.current_turn == "white" else "white"
+        else:
+            print("No moves to undo")
+
+    def get_ai_move(self):
+        best_move = None
+        best_value = float('-inf')
+
+        for move in self.board.get_all_moves("black"):
+            new_board = copy.deepcopy(self.board)
+            new_board.perform_move(*move)
+            board_value = new_board.evaluate()
+            if board_value > best_value:
+                best_value = board_value
+                best_move = move
+
+        if best_move is None:
             raise ValueError("No possible moves for AI")
         
-        return random.choice(possible_moves)
+        return best_move
 
 if __name__ == "__main__":
     game = Game()
